@@ -1,0 +1,158 @@
+"""
+Created on Fri Dec 08 16:49:47 2017
+
+@author: caleb.nguyen
+"""
+
+# import packages
+import numpy as np
+import scipy as sp
+import matplotlib as mpl
+import matplotlib.cm as cm
+import matplotlib.pyplot as plt
+import pandas as pd
+from sklearn import svm
+from scipy.stats import norm
+
+#read in the data
+df = pd.read_csv("C:\Users\caleb.nguyen\Downloads\creditcard.csv")
+
+"""
+Credit to Chris Beaumont from CS 109 Harvard for the block of code from line 23 - line 61
+"""
+def remove_border(axes=None, top=False, right=False, left=True, bottom=True):
+    """
+    Minimize chartjunk by stripping out unnecesasry plot borders and axis ticks
+    
+    The top/right/left/bottom keywords toggle whether the corresponding plot border is drawn
+    """
+    ax = axes or plt.gca()
+    ax.spines['top'].set_visible(top)
+    ax.spines['right'].set_visible(right)
+    ax.spines['left'].set_visible(left)
+    ax.spines['bottom'].set_visible(bottom)
+    
+    #turn off all ticks
+    ax.yaxis.set_ticks_position('none')
+    ax.xaxis.set_ticks_position('none')
+    
+    #now re-enable visibles
+    if top:
+        ax.xaxis.tick_top()
+    if bottom:
+        ax.xaxis.tick_bottom()
+    if left:
+        ax.yaxis.tick_left()
+    if right:
+        ax.yaxis.tick_right()
+        
+#create a 5x6 grid of plots.
+fig, axes = plt.subplots(nrows=5, ncols=6, figsize=(12, 8), 
+                         tight_layout=True)
+
+bins = np.arange(-5, 5, 0.1)
+for ax, var in zip(axes.ravel(), list(df)):
+    ax.hist(df[var], bins=bins, histtype='stepfilled', 
+            normed=True, color='r', alpha=.3, ec='none')
+    ax.annotate(var, xy=(-5, 0.1), fontsize=14)
+    ax.xaxis.set_ticks(np.arange(-5, 6, 2))
+    ax.set_yticks([])
+    remove_border(ax, left=False)
+    ax.set_xlabel('Value')
+
+
+def estimateGaussian(dataset):
+    """
+    get mu and sigma of training distribution
+    """
+    mu = np.mean(dataset, axis=0)
+    sigma = np.var(dataset, axis=0)
+    return mu, sigma
+    
+def Gaussian(dataset,mu,sigma):
+    """
+    get probability of observation in cross validation and test
+    """    
+    p = sp.stats.norm(mu, sigma)
+    return 0.5 - np.abs(0.5 - p.cdf(dataset))
+
+
+"""
+divide data to train, cross validation and test
+train: 60% of normal
+cross validation: 20% of normal and 50% of anomalous
+test: 20% of normal and 50% of anomalous
+"""
+normal = df[df['Class'] == 0].values
+anomalous = df[df['Class'] == 1].values
+
+from sklearn.cross_validation import train_test_split
+from sklearn.metrics import accuracy_score
+ntrain1, ntest = train_test_split(xrange(normal.shape[0]), train_size=0.8)
+ntrain, ncross = train_test_split(ntrain1, train_size=0.75)
+across, atest = train_test_split(xrange(anomalous.shape[0]), train_size=0.5)
+from sklearn.preprocessing import PolynomialFeatures
+nx = normal[:,1:30]
+ax = anomalous[:,1:30]
+ny = normal[:,30]
+ay = anomalous[:,30]
+xtrain = nx[ntrain]
+xcross = np.append(nx[ncross], ax[across], axis = 0)
+xtest = np.append(nx[ntest], ax[atest], axis = 0)
+ytrain = ny[ntrain]
+ycross = np.append(ny[ncross], ay[across], axis = 0)
+ytest = np.append(ny[ntest], ay[atest], axis = 0)
+
+
+"""
+Actually get mu and sigma from train
+"""
+mu, sigma = estimateGaussian(xtrain)
+
+"""
+Actually get probability of observation in cross validation
+"""
+xprob = Gaussian(xcross[:, 0], mu[0], sigma[0])
+for i in range(1,29):
+    a = Gaussian(xcross[:, i], mu[i], sigma[i]) * 10
+    xprob = xprob * a
+"""
+set benchmark for what is anomalous
+"""    
+ycross_pred = np.where(xprob<=np.percentile(xprob, 10), 1, 0)
+
+"""
+precision recall fscore
+"""
+from sklearn.metrics import precision_recall_fscore_support
+precision_recall_fscore_support(ycross, ycross_pred)
+
+"""
+confusion matrix
+"""
+from sklearn.metrics import confusion_matrix
+confusion_matrix(ycross, ycross_pred)
+
+"""
+Actually get probability of observation in test
+"""
+
+xprob2 = Gaussian(xtest[:, 0], mu[0], sigma[0])
+for i in range(1,29):
+    a = Gaussian(xtest[:, i], mu[i], sigma[i]) * 10
+    xprob2 = xprob2 * a
+    
+"""
+set benchmark for what is anomalous
+"""    
+ytest_pred = np.where(xprob2<=np.percentile(xprob, 10), 1, 0)
+
+"""
+precision recall fscore
+"""
+precision_recall_fscore_support(ytest, ytest_pred)[1][1]
+
+"""
+confusion matrix
+"""
+confusion_matrix(ytest, ytest_pred) 
